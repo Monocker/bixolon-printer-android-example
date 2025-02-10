@@ -1,64 +1,138 @@
-# Bixolon Printer Integration Example for Android
+# Bixolon Printer Integration Example for Android (Jetpack Compose)
 
-This project demonstrates how to integrate and utilize a Bixolon printer within an Android application. Given the limited official documentation, this example serves as a practical guide for developers aiming to implement Bixolon printer functionality in their Android projects.
+This project demonstrates how to integrate and utilize a **Bixolon printer** within an **Android application using Jetpack Compose**. This implementation is based on the **official Bixolon SDK**, ensuring compatibility and optimal performance with supported Bixolon printers.
 
 ## Overview
 
-The application establishes a Bluetooth connection to a Bixolon SPP-R200III printer and sends text data for printing. The integration leverages the `BixolonPrinter.jar` SDK, sourced from the [fewlaps/bixolon-printer-example](https://github.com/fewlaps/bixolon-printer-example) repository, due to challenges encountered with the official SDK versions.
+The application establishes a **Bluetooth connection** to a **Bixolon SPP-R200III** printer and sends both **text and image data** for printing. The integration utilizes **`jPOS` and `BXLConfigLoader`** from the official **Bixolon SDK**, following best practices for Bluetooth printing.
 
 ## Features
 
-- **Bluetooth Connectivity**: Automatically connects to the Bixolon printer using its MAC address.
-- **Text Printing**: Sends text data to the printer for immediate printing.
-- **User Interface**: Provides a simple UI with a button to initiate the printing process.
+- **Bluetooth Connectivity**: Configures and connects to the Bixolon printer using its **MAC address**.
+- **Image and Text Printing**: Sends a logo and formatted text to the printer.
+- **Permissions Handling**: Ensures proper permission requests for **Android 12+ (API level 31 and above)**.
+- **Jetpack Compose UI**: Provides a simple UI with a button to trigger the printing process.
 
 ## Prerequisites
 
-- **Android Device**: Running Android API level 31 or higher.
-- **Bixolon Printer**: Specifically tested with the Bixolon SPP-R200III model.
-- **BixolonPrinter.jar**: Ensure this SDK is included in your project's `libs` directory.
+- **Android Device**: Running **Android API level 31 (Android 12)** or higher.
+- **Bixolon Printer**: Specifically tested with **Bixolon SPP-R200III**.
+- **Bixolon SDK**: The required libraries should be included in your project.
 
 ## Project Structure
 
-- **MainActivity.kt**: Contains the core logic for Bluetooth connection and printing.
-- **PrinterApp Composable**: Defines the UI components using Jetpack Compose.
-- **AndroidManifest.xml**: Declares necessary permissions and SDK versions.
+- **`MainActivity.kt`**: Handles Bluetooth configuration, connection, and printing logic.
+- **`PrintScreen.kt`**: Jetpack Compose UI for triggering printing.
+- **`AndroidManifest.xml`**: Declares necessary permissions and Bluetooth features.
 
 ## Setup and Usage
 
 1. **Clone the Repository**: Begin by cloning this repository to your local machine.
 
-2. **Include the SDK**: Place the `BixolonPrinter.jar` file into the `libs` directory of your project.
+2. **Include the SDK**: Ensure that the **Bixolon SDK** (including `jPOS` and `BXLConfigLoader`) is included in your project dependencies.
 
-3. **Configure Permissions**: Ensure the following permissions are declared in your `AndroidManifest.xml`:
+3. **Configure Permissions**: Add the following permissions in your `AndroidManifest.xml`:
 
    ```xml
    <uses-permission android:name="android.permission.BLUETOOTH" />
    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+   <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
    ```
 
-4. **Set Up Bluetooth**: Pair your Android device with the Bixolon printer via Bluetooth settings.
+4. **Set Up Bluetooth**: Pair your Android device with the **Bixolon printer** via **Bluetooth settings**.
 
-5. **Update MAC Address**: In `MainActivity.kt`, update the `printerMacAddress` variable with your printer's MAC address:
+5. **Update MAC Address**: In `MainActivity.kt`, update the **`printerMacAddress`** variable with your printer's MAC address:
 
    ```kotlin
    private val printerMacAddress = "YOUR_PRINTER_MAC_ADDRESS"
    ```
 
-6. **Build and Run**: Compile and run the application on your Android device. Use the provided UI to initiate a test print.
+6. **Build and Run**: Compile and run the application on your Android device. Use the UI to initiate a **test print**.
 
-## Code Highlights
+## Implementation Details
 
-- **Bluetooth Connection**: The application checks for necessary Bluetooth permissions and establishes a connection to the printer's MAC address.
+### 1. Configuring the Printer
 
-- **Printing Logic**: Utilizes the `OutputStream` to send initialization commands and text data to the printer.
+The **BXLConfigLoader** is used to configure the printer for Bluetooth communication:
 
-- **Permissions Handling**: Implements runtime permission requests for Bluetooth connectivity, especially for devices running Android 12 (API level 31) and above.
+```kotlin
+bxlConfigLoader.addEntry(
+    logicalName,
+    BXLConfigLoader.DEVICE_CATEGORY_POS_PRINTER,
+    "SPP-R200III",
+    BXLConfigLoader.DEVICE_BUS_BLUETOOTH,
+    "74:F0:7D:E5:91:F7" // Replace with your printer MAC address
+)
+bxlConfigLoader.saveFile()
+```
+
+### 2. Printing an Image and Text
+
+The application prints a **logo image** followed by **formatted text**:
+
+```kotlin
+val bitmap: Bitmap? = BitmapFactory.decodeResource(resources, R.drawable.logo)
+if (bitmap != null) {
+    val processedBitmap = convertToMonochrome(bitmap)
+    posPrinter.printBitmap(
+        POSPrinterConst.PTR_S_RECEIPT,
+        processedBitmap,
+        posPrinter.recLineWidth,
+        POSPrinterConst.PTR_BM_CENTER,
+        200
+    )
+    posPrinter.printNormal(POSPrinterConst.PTR_S_RECEIPT, "\n\n")
+}
+posPrinter.printNormal(
+    POSPrinterConst.PTR_S_RECEIPT,
+    "===== PURCHASE TICKET =====\nThank you for your purchase\n\n"
+)
+```
+
+### 3. Handling Permissions in Android 12+
+
+For **Android 12+**, Bluetooth permissions must be requested at runtime:
+
+```kotlin
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+    ActivityCompat.requestPermissions(
+        this,
+        arrayOf(
+            Manifest.permission.BLUETOOTH_CONNECT,
+            Manifest.permission.BLUETOOTH_SCAN
+        ),
+        1
+    )
+}
+```
+
+### 4. Converting Image for Thermal Printing
+
+To improve **image printing quality**, the bitmap is converted to a **monochrome (black-and-white) format**:
+
+```kotlin
+private fun convertToMonochrome(bitmap: Bitmap): Bitmap {
+    val width = bitmap.width
+    val height = bitmap.height
+    val monochromeBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+
+    for (y in 0 until height) {
+        for (x in 0 until width) {
+            val pixel = bitmap.getPixel(x, y)
+            val red = (pixel shr 16) and 0xFF
+            val green = (pixel shr 8) and 0xFF
+            val blue = pixel and 0xFF
+            val gray = (red + green + blue) / 3
+            val newColor = if (gray > 128) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
+            monochromeBitmap.setPixel(x, y, newColor)
+        }
+    }
+    return monochromeBitmap
+}
+```
 
 ## References
 
-- [fewlaps/bixolon-printer-example](https://github.com/fewlaps/bixolon-printer-example): Provided the `BixolonPrinter.jar` SDK and served as a foundational reference for this implementation.
-
-
+- **Official Bixolon SDK Documentation**: [https://www.bixolon.com/](https://www.bixolon.com/)
 

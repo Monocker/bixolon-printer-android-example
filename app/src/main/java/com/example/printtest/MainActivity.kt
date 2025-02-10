@@ -1,161 +1,156 @@
 package com.example.bixolonprinter
 
 import android.Manifest
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothSocket
-import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import com.bixolon.printer.BixolonPrinter
-import java.io.IOException
-import java.io.OutputStream
-import java.util.*
+import com.bxl.config.editor.BXLConfigLoader
+import jpos.POSPrinter
+import jpos.POSPrinterConst
+import jpos.JposException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import com.example.printtest.R
 
 class MainActivity : ComponentActivity() {
-
-    private var bixolonPrinter: BixolonPrinter? = null
-    private var bluetoothSocket: BluetoothSocket? = null
-    private var outputStream: OutputStream? = null
-    private val printerMacAddress = "74:F0:7D:E5:91:F7"
+    private lateinit var posPrinter: POSPrinter
+    private lateinit var bxlConfigLoader: BXLConfigLoader
+    private val logicalName = "BIXOLON"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val handler = Handler(Looper.getMainLooper())
-        bixolonPrinter = BixolonPrinter(this, handler, Looper.getMainLooper())
 
-        setContent {
-            PrinterApp(
-                onPrint = { printText("Test in Bixolon SPP-R200III") }
-            )
-        }
-    }
+        posPrinter = POSPrinter(this)
+        bxlConfigLoader = BXLConfigLoader(this)
 
-    /** Bluetooth permissions on Android 12+ */
-    private fun checkBluetoothPermission(): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            return ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.BLUETOOTH_CONNECT
-            ) == PackageManager.PERMISSION_GRANTED
-        }
-        return true
-    }
-
-    private fun requestBluetoothPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             ActivityCompat.requestPermissions(
                 this,
-                arrayOf(Manifest.permission.BLUETOOTH_CONNECT),
+                arrayOf(
+                    Manifest.permission.BLUETOOTH_CONNECT,
+                    Manifest.permission.BLUETOOTH_SCAN
+                ),
                 1
             )
         }
-    }
 
-    /** Bluetooth connection with the printer. */
-    private fun connectToPrinter(): Boolean {
-        if (!checkBluetoothPermission()) {
-            requestBluetoothPermission()
-            return false
-        }
+        configurePrinter()
 
-        val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-        val device: BluetoothDevice? = bluetoothAdapter?.bondedDevices?.find { it.address == printerMacAddress }
-
-        return try {
-            val uuid = SERIAL_PORT_SERVICE_CLASS_UUID
-            bluetoothSocket = device?.createRfcommSocketToServiceRecord(uuid)
-            bluetoothSocket?.connect()
-            outputStream = bluetoothSocket?.outputStream
-            true
-        } catch (e: IOException) {
-            Log.e("Printer", "❌ Error conectando a la impresora", e)
-            false
+        setContent {
+            PrintScreen(onPrintClick = {
+                CoroutineScope(Dispatchers.IO).launch {
+                    printImageAndText()
+                }
+            })
         }
     }
 
-    /** Function to send text to the printer. */
-    private fun printText(text: String) {
-        if (connectToPrinter()) {
-            try {
-                val esc = byteArrayOf(0x1B, 0x40) // Initialize the printer
-                outputStream?.write(esc)
-                outputStream?.write("$text\n".toByteArray())
-                outputStream?.write(byteArrayOf(0x0A))
-                outputStream?.flush()
-            } catch (e: IOException) {
-                Log.e("Printer", "❌ Printing error", e)
-            } finally {
-                closeConnection()
-            }
-        }
-    }
-
-    /** Close Bluetooth connection */
-    private fun closeConnection() {
+    private fun configurePrinter() {
         try {
-            outputStream?.close()
-            bluetoothSocket?.close()
-        } catch (e: IOException) {
-            Log.e("Printer", "❌ Error,  Close connection", e)
+            bxlConfigLoader.addEntry(
+                logicalName,
+                BXLConfigLoader.DEVICE_CATEGORY_POS_PRINTER,
+                "SPP-R200III",
+                BXLConfigLoader.DEVICE_BUS_BLUETOOTH,
+                "74:F0:7D:E5:91:F7"
+            )
+            bxlConfigLoader.saveFile()
+            Log.d("BIXOLON", "✅ Settings saved successfully")
+        } catch (e: Exception) {
+            Log.e("BIXOLON", "❌ Error configuring printer", e)
         }
     }
 
-    companion object {
-        private val SERIAL_PORT_SERVICE_CLASS_UUID: UUID =
-            UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
-    }
-}
-
-/** UI */
-@Composable
-fun PrinterApp(onPrint: () -> Unit) {
-    var isPrinting by remember { mutableStateOf(false) }
-
-    val requestPermissionLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
-            if (!isGranted) {
-                Log.e("Printer", "❌ Bluetooth permission denied")
+    @Composable
+    fun PrintScreen(onPrintClick: () -> Unit) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Button(onClick = onPrintClick) {
+                Text("Print Ticket")
             }
         }
+    }
 
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        LaunchedEffect(Unit) {
-            requestPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+    private fun printImageAndText() {
+        try {
+            posPrinter.open(logicalName)
+            posPrinter.claim(5000)
+            posPrinter.deviceEnabled = true
+
+            // Transaction begins to group image and text
+            posPrinter.transactionPrint(POSPrinterConst.PTR_S_RECEIPT, POSPrinterConst.PTR_TP_TRANSACTION)
+            val bitmap: Bitmap? = BitmapFactory.decodeResource(resources, R.drawable.logo)
+            if (bitmap == null) {
+                Log.e("Printer", "❌ Error: Image could not be loaded")
+                return
+            }
+
+            val processedBitmap = convertToMonochrome(bitmap)
+
+
+            posPrinter.printBitmap(
+                POSPrinterConst.PTR_S_RECEIPT,
+                processedBitmap,
+                posPrinter.recLineWidth,
+                POSPrinterConst.PTR_BM_CENTER,
+                200
+            )
+
+
+            posPrinter.printNormal(POSPrinterConst.PTR_S_RECEIPT, "\n\n")
+
+
+            posPrinter.printNormal(
+                POSPrinterConst.PTR_S_RECEIPT,
+                "===== PURCHASE TICKET =====\nThank you for your purchase\n\n"
+            )
+
+            // Finalizar transacción e imprimir
+            posPrinter.transactionPrint(POSPrinterConst.PTR_S_RECEIPT, POSPrinterConst.PTR_TP_NORMAL)
+
+            // Cerrar la conexión
+            posPrinter.close()
+
+            Log.d("Printer", "✅ Printing completed successfully")
+        } catch (e: JposException) {
+            Log.e("Printer", "❌ Error printing ticket", e)
         }
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(text = "🖨️ Printing with Bixolon SPP-R200III")
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(
-            onClick = {
-                isPrinting = true
-                onPrint()
-                isPrinting = false
-            },
-            enabled = !isPrinting
-        ) {
-            Text(text = if (isPrinting) "Printing..." else "Print 'Hello World'")
+    /**
+     * Converts an image to black and white (1-bit) for improved thermal printing.
+     */
+    private fun convertToMonochrome(bitmap: Bitmap): Bitmap {
+        val width = bitmap.width
+        val height = bitmap.height
+        val monochromeBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                val pixel = bitmap.getPixel(x, y)
+                val red = (pixel shr 16) and 0xFF
+                val green = (pixel shr 8) and 0xFF
+                val blue = pixel and 0xFF
+                val gray = (red + green + blue) / 3
+                val newColor = if (gray > 128) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
+                monochromeBitmap.setPixel(x, y, newColor)
+            }
         }
+        return monochromeBitmap
     }
 }

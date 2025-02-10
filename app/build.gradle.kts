@@ -37,15 +37,21 @@ android {
     buildFeatures {
         compose = true
     }
+    sourceSets {
+        named("main") {
+            jniLibs.srcDirs("src/main/jniLibs")
+        }
+    }
 }
 
 
 dependencies {
 
-//    implementation (files("libs/bixolon_pdf.aar"))
-//    implementation(files("libs/bixolon_printer_V2.2.5.jar"))
-//    implementation(files("libs/libcommon_V1.3.2.jar"))//BixolonPrinter
+ implementation (files("libs/bixolon_pdf.aar"))
+ implementation(files("libs/bixolon_printer_V2.2.5.jar"))
+ implementation(files("libs/libcommon_V1.3.2.jar"))//BixolonPrinter
     implementation(files("libs/BixolonPrinter.jar"))
+    implementation ("com.caverock:androidsvg:1.4")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
